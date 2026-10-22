@@ -153,14 +153,14 @@ def main():
             with c2:
                 age = st.slider("Age", 15, 22, 17)
                 absences = st.number_input("School absences", min_value=0, max_value=93, value=4)
-                G1 = st.slider("First period grade (G1)", 0, 20, 10)
-                G2 = st.slider("Second period grade (G2)", 0, 20, 11)
+                G1 = st.slider("First assessment grade", 0, 20, 10)
+                G2 = st.slider("Second assessment grade", 0, 20, 11)
             with c3:
-                school = st.selectbox("School", ["GP","MS"])
+                school = st.selectbox("School", ["GP", "MS"], format_func=lambda x: {"GP": "School A", "MS": "School B"}[x])
                 sex = st.selectbox("Sex", ["F","M"])
                 address = st.selectbox("Home area", ["U","R"], format_func=lambda x: "Urban" if x=="U" else "Rural")
                 support = st.selectbox("Extra school support", ["no","yes"])
-            st.caption("G1 and G2 are strong predictors because they are earlier grades in the same academic year. For earlier intervention, test a model without these grades too.")
+            st.caption("The first and second assessment grades are historical marks used by the trained model. The school choices are shown as neutral labels (School A / School B) because GP and MS are dataset-specific school codes, not Indian board names.")
             submitted = st.form_submit_button("Run prediction and save report", type="primary", use_container_width=True)
         if submitted:
             if not name.strip():
@@ -200,11 +200,11 @@ def main():
             with tab_graph:
                 st.markdown("#### Grade comparison")
                 chart_df = pd.DataFrame({
-                    "Assessment": ["First period (G1)", "Second period (G2)", "Predicted final"],
+                    "Assessment": ["First assessment", "Second assessment", "Predicted final"],
                     "Grade out of 20": [float(feature_row.get("G1", 0)), float(feature_row.get("G2", 0)), baseline_grade],
                 }).set_index("Assessment")
                 st.bar_chart(chart_df, y="Grade out of 20", use_container_width=True)
-                st.caption("The final grade is a model estimate. G1/G2 are historical inputs, not predictions.")
+                st.caption("The final grade is a model estimate. The first and second assessment marks are historical inputs, not predictions.")
 
             with tab_whatif:
                 st.markdown("#### Change inputs and compare estimates")
@@ -272,8 +272,8 @@ def main():
                 st.markdown("**One-input-at-a-time sensitivity check**")
                 scenarios = []
                 checks = [
-                    ("G1 + 2 points", "G1", min(20, int(feature_row.get("G1", 10)) + 2)),
-                    ("G2 + 2 points", "G2", min(20, int(feature_row.get("G2", 11)) + 2)),
+                    ("First assessment + 2 points", "G1", min(20, int(feature_row.get("G1", 10)) + 2)),
+                    ("Second assessment + 2 points", "G2", min(20, int(feature_row.get("G2", 11)) + 2)),
                     ("Study time one level higher", "studytime", min(4, int(feature_row.get("studytime", 2)) + 1)),
                     ("5 fewer absences", "absences", max(0, int(feature_row.get("absences", 4)) - 5)),
                 ]
