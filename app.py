@@ -187,6 +187,103 @@ def main():
             st.download_button("Download PDF report", data=pdf, file_name=f"edupredict_report_{result['id']}.pdf", mime="application/pdf")
             st.download_button("Download CSV report", data=pd.DataFrame([{"student_name":result["name"],"roll_number":result["roll"],"predicted_grade":result["grade"],"category":result["category"],**result["features"]}]).to_csv(index=False).encode(), file_name=f"edupredict_report_{result['id']}.csv", mime="text/csv")
             st.caption("The estimate is not a guaranteed outcome. Review it with academic context and teacher judgement.")
+
+            # Advanced interactive insights are calculated from the same trained model.
+            st.markdown("## Advanced student insights")
+            tab_graph, tab_whatif, tab_plan, tab_explain = st.tabs([
+                "📊 Performance graph", "🎛️ What-if lab", "📚 Study plan", "🧠 Explain prediction"
+            ])
+
+            feature_row = dict(result["features"])
+            baseline_grade = float(result["grade"])
+
+            with tab_graph:
+                st.markdown("#### Grade comparison")
+                chart_df = pd.DataFrame({
+                    "Assessment": ["First period (G1)", "Second period (G2)", "Predicted final"],
+                    "Grade out of 20": [float(feature_row.get("G1", 0)), float(feature_row.get("G2", 0)), baseline_grade],
+                }).set_index("Assessment")
+                st.bar_chart(chart_df, y="Grade out of 20", use_container_width=True)
+                st.caption("The final grade is a model estimate. G1/G2 are historical inputs, not predictions.")
+
+            with tab_whatif:
+                st.markdown("#### Change inputs and compare estimates")
+                st.caption("These controls do not change the saved original record. They run temporary predictions with the same model.")
+                w1, w2 = st.columns(2)
+                with w1:
+                    wi_studytime = st.select_slider(
+                        "Weekly study time", options=[1, 2, 3, 4],
+                        value=int(feature_row.get("studytime", 2)),
+                        format_func=lambda x: {1: "Under 2 hours", 2: "2–5 hours", 3: "5–10 hours", 4: "Over 10 hours"}[x],
+                        key=f"whatif_study_{result['id']}"
+                    )
+                    wi_absences = st.slider(
+                        "School absences", 0, 93, int(feature_row.get("absences", 4)),
+                        key=f"whatif_absences_{result['id']}"
+                    )
+                with w2:
+                    wi_g1 = st.slider("First period grade (G1)", 0, 20, int(feature_row.get("G1", 10)), key=f"whatif_g1_{result['id']}")
+                    wi_g2 = st.slider("Second period grade (G2)", 0, 20, int(feature_row.get("G2", 11)), key=f"whatif_g2_{result['id']}")
+                whatif_row = dict(feature_row)
+                whatif_row.update({"studytime": wi_studytime, "absences": wi_absences, "G1": wi_g1, "G2": wi_g2})
+                whatif_grade = predict_grade(bundle, whatif_row)
+                delta = whatif_grade - baseline_grade
+                q1, q2, q3 = st.columns(3)
+                q1.metric("Original estimate", f"{baseline_grade:.1f}/20")
+                q2.metric("What-if estimate", f"{whatif_grade:.1f}/20")
+                q3.metric("Difference", f"{delta:+.1f} points")
+                st.bar_chart(pd.DataFrame({"Scenario": ["Original", "What-if"], "Estimated grade": [baseline_grade, whatif_grade]}).set_index("Scenario"), y="Estimated grade", use_container_width=True)
+                st.info("A what-if result is a model simulation, not proof that changing one factor will cause a real grade change.")
+
+            with tab_plan:
+                st.markdown("#### Suggested action plan")
+                for index, tip in enumerate(result.get("tips", []), start=1):
+                    st.write(f"**{index}.** {tip}")
+                plan = []
+                if int(feature_row.get("G2", 0)) < 10:
+                    plan.append("Schedule short, regular maths revision sessions and review the topics missed in recent assessments.")
+                if int(feature_row.get("studytime", 2)) <= 2:
+                    plan.append("Try a realistic weekly study timetable with focused practice blocks and short breaks.")
+                if int(feature_row.get("absences", 0)) >= 10:
+                    plan.append("Review attendance barriers with a teacher or trusted adult and make a catch-up plan for missed lessons.")
+                if int(feature_row.get("failures", 0)) > 0:
+                    plan.append("Identify foundational topics that need practice and ask a teacher for targeted support.")
+                if not plan:
+                    plan.append("Maintain the current study routine, practise exam-style questions, and review progress with a teacher.")
+                st.markdown("##### Personalised weekly actions")
+                for action in plan:
+                    st.checkbox(action, value=False, key=f"plan_{result['id']}_{plan.index(action)}")
+                st.caption("These are rule-based study suggestions, not recommendations generated by a language model.")
+
+            with tab_explain:
+                st.markdown("#### Why did the model give this estimate?")
+                st.write("This project uses a trained machine-learning regression model. It does not use a conversational AI model.")
+                st.markdown("**Global feature importance**")
+                try:
+                    importance_df = feature_importance(bundle)
+                    if not importance_df.empty and importance_df["Importance"].fillna(0).sum() > 0:
+                        st.bar_chart(importance_df.set_index("Feature"), y="Importance", use_container_width=True)
+                        st.caption("This describes model-level importance across the fitted model; it does not explain this individual prediction by itself.")
+                    else:
+                        st.info("This fitted model does not expose usable feature-importance values. Use the sensitivity comparison below instead.")
+                except Exception:
+                    st.info("Global feature importance is unavailable for this model. Use the sensitivity comparison below instead.")
+
+                st.markdown("**One-input-at-a-time sensitivity check**")
+                scenarios = []
+                checks = [
+                    ("G1 + 2 points", "G1", min(20, int(feature_row.get("G1", 10)) + 2)),
+                    ("G2 + 2 points", "G2", min(20, int(feature_row.get("G2", 11)) + 2)),
+                    ("Study time one level higher", "studytime", min(4, int(feature_row.get("studytime", 2)) + 1)),
+                    ("5 fewer absences", "absences", max(0, int(feature_row.get("absences", 4)) - 5)),
+                ]
+                for label, field, changed_value in checks:
+                    scenario_row = dict(feature_row)
+                    scenario_row[field] = changed_value
+                    scenario_grade = predict_grade(bundle, scenario_row)
+                    scenarios.append({"Scenario": label, "Estimated grade": scenario_grade, "Difference vs baseline": round(scenario_grade - baseline_grade, 2)})
+                st.dataframe(pd.DataFrame(scenarios), use_container_width=True, hide_index=True)
+                st.caption("Sensitivity checks show how this model responds to hypothetical input changes. They are not causal evidence, and changes may not reflect real-world outcomes.")
     elif page in ("Students & history", "My history"):
         hero("Student records & history", "Search saved predictions and export a CSV for your academic project.", "RECORD MANAGEMENT")
         if user["role"] == "admin":
