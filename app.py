@@ -153,14 +153,17 @@ def main():
             with c2:
                 age = st.slider("Age", 15, 22, 17)
                 absences = st.number_input("School absences", min_value=0, max_value=93, value=4)
-                G1 = st.slider("First assessment grade", 0, 20, 10)
-                G2 = st.slider("Second assessment grade", 0, 20, 11)
+                G1 = st.slider("First Assessment Marks", 0, 20, 10)
+                G2 = st.slider("Second Assessment Marks", 0, 20, 11)
             with c3:
-                school = st.selectbox("School", ["GP", "MS"], format_func=lambda x: {"GP": "School A", "MS": "School B"}[x])
+                school_label = st.selectbox("School Type", ["Government School", "Private School"] )
+                # Compatibility mapping only: the trained model still expects the original Portuguese dataset codes.
+                # This display mapping is not a validated Government-vs-Private feature mapping.
+                school = "GP" if school_label == "Government School" else "MS"
                 sex = st.selectbox("Sex", ["F","M"])
                 address = st.selectbox("Home area", ["U","R"], format_func=lambda x: "Urban" if x=="U" else "Rural")
                 support = st.selectbox("Extra school support", ["no","yes"])
-            st.caption("The first and second assessment grades are historical marks used by the trained model. The school choices are shown as neutral labels (School A / School B) because GP and MS are dataset-specific school codes, not Indian board names.")
+            st.caption("First and second assessment marks are inputs to the existing model. Important: Government/Private are display labels only; the trained model still uses Portuguese school codes internally, so its results are not validated for Indian school types.")
             submitted = st.form_submit_button("Run prediction and save report", type="primary", use_container_width=True)
         if submitted:
             if not name.strip():
@@ -177,7 +180,7 @@ def main():
         if result:
             st.divider()
             a,b,c = st.columns(3)
-            a.metric("Estimated final grade", f"{result['grade']:.1f} / 20")
+            a.metric("Predicted Final Assessment Grade", f"{result['grade']:.1f} / 20")
             b.metric("Performance outlook", result["category"])
             c.metric("Report ID", f"EP-{result['id']:05d}")
             st.progress(min(1.0, max(0.0,result["grade"]/20)))
@@ -200,11 +203,11 @@ def main():
             with tab_graph:
                 st.markdown("#### Grade comparison")
                 chart_df = pd.DataFrame({
-                    "Assessment": ["First assessment", "Second assessment", "Predicted final"],
+                    "Assessment": ["First Assessment Marks", "Second Assessment Marks", "Predicted Final Grade"],
                     "Grade out of 20": [float(feature_row.get("G1", 0)), float(feature_row.get("G2", 0)), baseline_grade],
                 }).set_index("Assessment")
                 st.bar_chart(chart_df, y="Grade out of 20", use_container_width=True)
-                st.caption("The final grade is a model estimate. The first and second assessment marks are historical inputs, not predictions.")
+                st.caption("The predicted final grade is a model estimate. First and second assessment marks are inputs, not predictions. The dataset does not define these as six-month or half-yearly periods.")
 
             with tab_whatif:
                 st.markdown("#### Change inputs and compare estimates")
@@ -222,8 +225,8 @@ def main():
                         key=f"whatif_absences_{result['id']}"
                     )
                 with w2:
-                    wi_g1 = st.slider("First period grade (G1)", 0, 20, int(feature_row.get("G1", 10)), key=f"whatif_g1_{result['id']}")
-                    wi_g2 = st.slider("Second period grade (G2)", 0, 20, int(feature_row.get("G2", 11)), key=f"whatif_g2_{result['id']}")
+                    wi_g1 = st.slider("First Assessment Marks", 0, 20, int(feature_row.get("G1", 10)), key=f"whatif_g1_{result['id']}")
+                    wi_g2 = st.slider("Second Assessment Marks", 0, 20, int(feature_row.get("G2", 11)), key=f"whatif_g2_{result['id']}")
                 whatif_row = dict(feature_row)
                 whatif_row.update({"studytime": wi_studytime, "absences": wi_absences, "G1": wi_g1, "G2": wi_g2})
                 whatif_grade = predict_grade(bundle, whatif_row)
@@ -272,8 +275,8 @@ def main():
                 st.markdown("**One-input-at-a-time sensitivity check**")
                 scenarios = []
                 checks = [
-                    ("First assessment + 2 points", "G1", min(20, int(feature_row.get("G1", 10)) + 2)),
-                    ("Second assessment + 2 points", "G2", min(20, int(feature_row.get("G2", 11)) + 2)),
+                    ("First assessment marks + 2 points", "G1", min(20, int(feature_row.get("G1", 10)) + 2)),
+                    ("Second assessment marks + 2 points", "G2", min(20, int(feature_row.get("G2", 11)) + 2)),
                     ("Study time one level higher", "studytime", min(4, int(feature_row.get("studytime", 2)) + 1)),
                     ("5 fewer absences", "absences", max(0, int(feature_row.get("absences", 4)) - 5)),
                 ]
